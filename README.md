@@ -36,6 +36,7 @@ python run_pos.py till open  --store HSR --staff S108 --float 3000
 python run_pos.py till move  --session TILL-HSR-<date> --type paid_out --amount 120 --reason courier --staff S108
 python run_pos.py till close --session TILL-HSR-<date> --staff S108 --counted 9327
 python run_pos.py serve --port 8000  # optional HTTP API (see below)
+python run_pos.py shopify-check      # read-only: does the Shopify backend provide what the POS needs?
 python run_pos.py sync-pending       # replay paid bills that never reached Shopify
 python run_pos.py bench --n 12       # time 12 bills against the mock (creates orders in the mock)
 ```
@@ -62,6 +63,18 @@ python run_pos.py bench --n 12       # time 12 bills against the mock (creates o
 
 `python run_pos.py serve` starts `pos/server.py` on `127.0.0.1:8000` (the brief allows a CLI or an HTTP API; the CLI is the primary interface). Endpoints: `GET /health`, `GET /api/customer?phone=`, `POST /api/checkout`, `POST /api/refund`, `GET /api/day-end?store=&date=`. **It has no authentication**, so it binds to localhost only and must not be exposed on a store network as is. `/api/customer` returns the priority/campaign `flags`. It does not expose manager discounts, partial refunds or the till; those are CLI-only for now. It has one test (`/health`); the checkout/refund endpoints are only exercised through the service layer tests.
 
+## Using a real Shopify store (not yet done)
+
+Everything so far ran against the bundled mock. To point at a real (dev) store, set the environment and run the read-only check first; it makes GET requests only:
+
+```bash
+set SHOPIFY_SHOP=your-store.myshopify.com        # PowerShell: $env:SHOPIFY_SHOP="..."
+set SHOPIFY_ACCESS_TOKEN=shpat_xxx               # a custom-app Admin API token (orders, customers, products, inventory, locations)
+python run_pos.py shopify-check
+```
+
+What it will probably show on a real store, because the mock puts Eluno data in a custom `eluno` block that real Shopify does not have: store code, HSN code and lens Rx limits would have to live in location / variant **metafields**, and `ShopifyAdapter` does not read metafields yet. Also still unverified on the real API: which order fields Shopify accepts as writable (for example per-line `total_discount` and `discount_allocations`), and whether the REST Admin API is still the right choice for a new app (Shopify has been steering new apps to GraphQL; check current policy). Treat the real-store run as the first task of the next phase, and do not bill real customers until a refund and a day-end have been reconciled against Shopify by hand.
+
 ## Decisions worth knowing
 
 - **Shopify is behind an adapter.** `domain/` and `services/` import no adapter and nothing from Shopify (enforced by `tests/test_architecture.py`); `pos/bootstrap.py` is the only place that picks concrete backends and hands them to `PosService`. The adapter turns Shopify JSON into domain types (`OrderRecord`, `Variant`, `Customer`…) and domain types into payloads. The *decisions* (what restocks, what the refund is, what the invoice number is) are made in the domain; the adapter only translates. Replacing Shopify in 2027 means writing one class with the same methods (`ShopifyAdapter` is the full list). Honest leak: the domain keeps `inventory_item_id` / `location_id` as opaque ids.
@@ -74,7 +87,7 @@ python run_pos.py bench --n 12       # time 12 bills against the mock (creates o
 - **Day-end source of truth is Shopify**, as Finance asked. The report also reads the local invoice register and till and prints a `MISMATCH:` line for: an invoice paid but not in Shopify, till cash sales / refunds that differ from Shopify cash orders, and a till variance over ₹200.
 - **Expired prescription**: the lookup returns only a currently valid Rx; if there is none, lens billing is blocked with "book an eye test". No override in v1 (a clinical decision for Dr. Iyer to make).
 
-## Tests (`python run_pos.py test`, 96)
+## Tests (`python run_pos.py test`, 99)
 
 Architecture (core imports no adapter / Shopify, no float money), tax (paisa invariant, date-effective rates), money/rounding/allocation, offers (stacking, best combination, expiry, caps, manager rules), Rx validation (every block reason, grid warning), refunds (per-line tax, restock location, partial, double refund, mismatch guard, cash/till), resilience (429 Retry-After, 503 on idempotent vs non-idempotent calls, timeout-after-create does not duplicate, paid-but-offline bill syncs exactly once, declined payment leaves a cancelled number), invoice series, till variance, manager-discount audit rules, day-end totals and mismatch reporting. Also: four parallel processes issuing invoice numbers from one file get 60 unique, gapless numbers. Tests use temp state and mocks; they never touch `state/` or the network.
 
@@ -115,6 +128,6 @@ pos/bootstrap.py       composition root: picks the real adapters
 pos/adapters/          shopify_adapter (only place Shopify shapes exist), smt_adapter, terminal_adapter, http_client
 pos/services/          pos_service (orchestration), invoice_formatter, outbox
 pos/server.py          optional localhost HTTP API
-tests/                 96 tests
+tests/                 99 tests
 starter-kit/           provided mock + seed data (unchanged)
 ```

@@ -203,6 +203,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     sv = sub.add_parser("serve", help="Optional HTTP API on localhost (no authentication)")
     sv.add_argument("--port", type=int, default=8000)
 
+    sub.add_parser("shopify-check", help="Read-only check that the Shopify backend (mock or real) provides what the POS needs")
+
     sub.add_parser("sync-pending", help="Replay paid bills that are not yet in Shopify")
 
     args = parser.parse_args(argv)
@@ -259,6 +261,10 @@ def main(argv: Optional[List[str]] = None) -> None:
                       f"variance {Money(s['variance_paise']).format_inr()}")
                 if s["variance_alert"]:
                     print(s["variance_note"])
+        elif args.command == "shopify-check":
+            from pos.shopify_check import print_report, run_checks
+            print(f"Checking {service.shopify.base_url}")
+            sys.exit(0 if print_report(run_checks(service.shopify)) else 1)
         elif args.command == "serve":
             from pos.server import run_server
             run_server(args.port)

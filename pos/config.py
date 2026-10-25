@@ -10,7 +10,15 @@ DATA_DIR = STARTER_KIT_DIR / "data"
 
 # Mock server endpoints
 MOCK_SERVER_URL = os.environ.get("ELUNO_MOCK_SERVER_URL", "http://127.0.0.1:8787")
-SHOPIFY_API_BASE = f"{MOCK_SERVER_URL}/admin/api/2026-10"
+# Real Shopify (optional): set SHOPIFY_SHOP=your-store.myshopify.com and SHOPIFY_ACCESS_TOKEN=shpat_...
+# Without them everything talks to the bundled mock.
+SHOPIFY_API_VERSION = os.environ.get("SHOPIFY_API_VERSION", "2026-10")
+SHOPIFY_SHOP = os.environ.get("SHOPIFY_SHOP", "")
+SHOPIFY_ACCESS_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN", "")
+SHOPIFY_API_BASE = (
+    f"https://{SHOPIFY_SHOP}/admin/api/{SHOPIFY_API_VERSION}" if SHOPIFY_SHOP
+    else f"{MOCK_SERVER_URL}/admin/api/{SHOPIFY_API_VERSION}"
+)
 SMT_API_BASE = f"{MOCK_SERVER_URL}/smt"
 TERMINAL_API_BASE = f"{MOCK_SERVER_URL}/terminal"
 

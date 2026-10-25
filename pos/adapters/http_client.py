@@ -38,7 +38,9 @@ class HttpStatusError(Exception):
 class ResilientHttpClient:
     """HTTP client resilient to rate limits (429) and transient server errors (503)."""
 
-    def __init__(self, max_retries: int = MAX_RETRIES, timeout: float = HTTP_TIMEOUT_SECS):
+    def __init__(self, max_retries: int = MAX_RETRIES, timeout: float = HTTP_TIMEOUT_SECS,
+                 default_headers: Optional[Dict[str, str]] = None):
+        self.default_headers = dict(default_headers or {})
         self.max_retries = max_retries
         self.timeout = timeout
 
@@ -58,6 +60,7 @@ class ResilientHttpClient:
             "Accept": "application/json",
             "User-Agent": "ElunoPOS/1.0",
         }
+        all_headers.update(self.default_headers)
         if headers:
             all_headers.update(headers)
 
