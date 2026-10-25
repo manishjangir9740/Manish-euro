@@ -105,3 +105,5 @@ pos/server.py          optional localhost HTTP API
 tests/                 91 tests
 starter-kit/           provided mock + seed data (unchanged)
 ```
+#   e u r o -  
+ 
