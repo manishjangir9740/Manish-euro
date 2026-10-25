@@ -43,3 +43,28 @@ class TestAccessToken(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestClientCredentials(unittest.TestCase):
+    @patch("urllib.request.urlopen")
+    def test_token_is_fetched_with_client_credentials_grant(self, urlopen):
+        from pos.adapters.shopify_auth import fetch_client_credentials_token
+        resp = MagicMock()
+        resp.read.return_value = b'{"access_token": "shpat_new", "expires_in": 86399}'
+        resp.__enter__.return_value = resp
+        urlopen.return_value = resp
+        self.assertEqual(fetch_client_credentials_token("s.myshopify.com", "id1", "sec1"), "shpat_new")
+        req = urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "https://s.myshopify.com/admin/oauth/access_token")
+        self.assertIn(b"grant_type=client_credentials", req.data)
+        self.assertIn(b"client_id=id1", req.data)
+
+    @patch("urllib.request.urlopen")
+    def test_rejected_credentials_raise_a_clear_error_without_echoing_the_secret(self, urlopen):
+        import io, urllib.error
+        from pos.adapters.shopify_auth import ShopifyAuthError, fetch_client_credentials_token
+        urlopen.side_effect = urllib.error.HTTPError("u", 400, "bad", {}, io.BytesIO(b'{"error":"invalid_client"}'))
+        with self.assertRaises(ShopifyAuthError) as ctx:
+            fetch_client_credentials_token("s.myshopify.com", "id1", "sec-very-secret")
+        self.assertIn("400", str(ctx.exception))
+        self.assertNotIn("sec-very-secret", str(ctx.exception))

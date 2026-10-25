@@ -15,6 +15,9 @@ MOCK_SERVER_URL = os.environ.get("ELUNO_MOCK_SERVER_URL", "http://127.0.0.1:8787
 SHOPIFY_API_VERSION = os.environ.get("SHOPIFY_API_VERSION", "2026-10")
 SHOPIFY_SHOP = os.environ.get("SHOPIFY_SHOP", "")
 SHOPIFY_ACCESS_TOKEN = os.environ.get("SHOPIFY_ACCESS_TOKEN", "")
+# Dev Dashboard apps: Client ID + secret instead of a static token (token is fetched at start-up)
+SHOPIFY_CLIENT_ID = os.environ.get("SHOPIFY_CLIENT_ID", "")
+SHOPIFY_CLIENT_SECRET = os.environ.get("SHOPIFY_CLIENT_SECRET", "")
 SHOPIFY_API_BASE = (
     f"https://{SHOPIFY_SHOP}/admin/api/{SHOPIFY_API_VERSION}" if SHOPIFY_SHOP
     else f"{MOCK_SERVER_URL}/admin/api/{SHOPIFY_API_VERSION}"

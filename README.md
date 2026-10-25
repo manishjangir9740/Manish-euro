@@ -73,6 +73,10 @@ set SHOPIFY_ACCESS_TOKEN=shpat_xxx               # a custom-app Admin API token 
 python run_pos.py shopify-check
 ```
 
+For a Shopify **Dev Dashboard** app (Client ID + secret instead of a static token) set `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET` instead of `SHOPIFY_ACCESS_TOKEN`; the POS exchanges them for a short-lived token at start-up and never writes it to disk.
+
+**Result so far (dev store, read-only):** auth works, currency INR, taxes included, orders / inventory / customer search readable. The check fails only on the Eluno data the empty store lacks (store code, HSN, lens limits), as predicted.
+
 What it will probably show on a real store, because the mock puts Eluno data in a custom `eluno` block that real Shopify does not have: store code, HSN code and lens Rx limits would have to live in location / variant **metafields**, and `ShopifyAdapter` does not read metafields yet. Also still unverified on the real API: which order fields Shopify accepts as writable (for example per-line `total_discount` and `discount_allocations`), and whether the REST Admin API is still the right choice for a new app (Shopify has been steering new apps to GraphQL; check current policy). Treat the real-store run as the first task of the next phase, and do not bill real customers until a refund and a day-end have been reconciled against Shopify by hand.
 
 ## Decisions worth knowing
@@ -87,7 +91,7 @@ What it will probably show on a real store, because the mock puts Eluno data in 
 - **Day-end source of truth is Shopify**, as Finance asked. The report also reads the local invoice register and till and prints a `MISMATCH:` line for: an invoice paid but not in Shopify, till cash sales / refunds that differ from Shopify cash orders, and a till variance over ₹200.
 - **Expired prescription**: the lookup returns only a currently valid Rx; if there is none, lens billing is blocked with "book an eye test". No override in v1 (a clinical decision for Dr. Iyer to make).
 
-## Tests (`python run_pos.py test`, 99)
+## Tests (`python run_pos.py test`, 101)
 
 Architecture (core imports no adapter / Shopify, no float money), tax (paisa invariant, date-effective rates), money/rounding/allocation, offers (stacking, best combination, expiry, caps, manager rules), Rx validation (every block reason, grid warning), refunds (per-line tax, restock location, partial, double refund, mismatch guard, cash/till), resilience (429 Retry-After, 503 on idempotent vs non-idempotent calls, timeout-after-create does not duplicate, paid-but-offline bill syncs exactly once, declined payment leaves a cancelled number), invoice series, till variance, manager-discount audit rules, day-end totals and mismatch reporting. Also: four parallel processes issuing invoice numbers from one file get 60 unique, gapless numbers. Tests use temp state and mocks; they never touch `state/` or the network.
 
@@ -128,6 +132,6 @@ pos/bootstrap.py       composition root: picks the real adapters
 pos/adapters/          shopify_adapter (only place Shopify shapes exist), smt_adapter, terminal_adapter, http_client
 pos/services/          pos_service (orchestration), invoice_formatter, outbox
 pos/server.py          optional localhost HTTP API
-tests/                 99 tests
+tests/                 101 tests
 starter-kit/           provided mock + seed data (unchanged)
 ```
