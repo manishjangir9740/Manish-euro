@@ -15,11 +15,8 @@ Order of operations at checkout (and why):
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from pos.adapters.http_client import AmbiguousWriteError
-from pos.adapters.shopify_adapter import ShopifyAdapter
-from pos.adapters.smt_adapter import SmtAdapter
-from pos.adapters.terminal_adapter import PaymentTerminalAdapter
 from pos.domain.audit import AuditLogger
+from pos.domain.errors import AmbiguousWriteError
 from pos.domain.invoice_series import CANCELLED, InvoiceSeriesManager
 from pos.domain.models import (
     CHANNELS,
@@ -51,9 +48,9 @@ class PosService:
 
     def __init__(
         self,
-        shopify_adapter: Optional[ShopifyAdapter] = None,
-        smt_adapter: Optional[SmtAdapter] = None,
-        terminal_adapter: Optional[PaymentTerminalAdapter] = None,
+        shopify_adapter: Any,   # order/customer/catalog backend (see pos.bootstrap)
+        smt_adapter: Any,       # prescriptions + staff
+        terminal_adapter: Any,  # payment terminal
         tax_calculator: Optional[TaxCalculator] = None,
         offer_engine: Optional[OfferEngine] = None,
         invoice_manager: Optional[InvoiceSeriesManager] = None,
@@ -61,9 +58,9 @@ class PosService:
         audit_logger: Optional[AuditLogger] = None,
         outbox: Optional[BillOutbox] = None,
     ):
-        self.shopify = shopify_adapter or ShopifyAdapter()
-        self.smt = smt_adapter or SmtAdapter()
-        self.terminal = terminal_adapter or PaymentTerminalAdapter()
+        self.shopify = shopify_adapter
+        self.smt = smt_adapter
+        self.terminal = terminal_adapter
         self.tax_calc = tax_calculator or TaxCalculator()
         self.offers = offer_engine or OfferEngine()
         self.invoices = invoice_manager or InvoiceSeriesManager()

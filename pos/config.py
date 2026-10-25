@@ -1,4 +1,4 @@
-﻿"""Configuration and path resolutions for Eluno POS."""
+"""Configuration and path resolutions for Eluno POS."""
 
 import os
 from pathlib import Path

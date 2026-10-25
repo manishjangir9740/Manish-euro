@@ -19,6 +19,7 @@ import time
 import urllib.request
 import urllib.error
 from typing import Any, Dict, Optional
+from pos.domain.errors import AmbiguousWriteError  # noqa: F401  (re-exported for adapters/tests)
 from pos.config import MAX_RETRIES, DEFAULT_RETRY_AFTER_SECS, HTTP_TIMEOUT_SECS
 
 logger = logging.getLogger("eluno.pos.http")
@@ -32,15 +33,6 @@ class HttpStatusError(Exception):
         self.url = url
         self.code = code
         self.body = body
-
-
-class AmbiguousWriteError(Exception):
-    """A write timed out or failed mid-flight; it may or may not have been applied."""
-
-    def __init__(self, url: str, cause: Exception):
-        super().__init__(f"Write to {url} has unknown outcome: {cause}")
-        self.url = url
-        self.cause = cause
 
 
 class ResilientHttpClient:

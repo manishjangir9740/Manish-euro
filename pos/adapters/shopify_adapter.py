@@ -17,7 +17,7 @@ import json
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 from pos.config import SHOPIFY_API_BASE
-from pos.adapters.http_client import AmbiguousWriteError, ResilientHttpClient
+from pos.adapters.http_client import AmbiguousWriteError, HttpStatusError, ResilientHttpClient
 from pos.domain.money import Money
 from pos.domain.models import (
     AppliedOffer,
@@ -341,7 +341,12 @@ class ShopifyAdapter:
         return last_inv, last_cn
 
     def get_order(self, order_id: int) -> OrderRecord:
-        data = self.client.get(f"{self.base_url}/orders/{order_id}.json")
+        try:
+            data = self.client.get(f"{self.base_url}/orders/{order_id}.json")
+        except HttpStatusError as exc:
+            if exc.code == 404:
+                raise ValueError(f"Order {order_id} not found in Shopify") from exc
+            raise
         o = data.get("order")
         if not o:
             raise ValueError(f"Order {order_id} not found in Shopify")

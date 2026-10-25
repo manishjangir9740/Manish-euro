@@ -14,7 +14,43 @@ if sys.platform == "win32":
 
 from pos.domain.money import Money
 from pos.domain.rx_validator import RxValidationError
+from pos.bootstrap import build_service
 from pos.services.pos_service import PosService
+
+
+def _mock_is_up() -> bool:
+    import urllib.request
+    from pos.config import MOCK_SERVER_URL
+    try:
+        urllib.request.urlopen(f"{MOCK_SERVER_URL}/health", timeout=2).read()
+        return True
+    except Exception:
+        return False
+
+
+def _start_mock_if_needed(flaky: bool):
+    """`run_pos.py demo` is a one-command run: start the bundled mock when nothing is listening."""
+    import subprocess
+    import time
+    import urllib.parse
+    from pos.config import BASE_DIR, MOCK_SERVER_URL
+    if _mock_is_up():
+        print(f"[mock] using the server already running at {MOCK_SERVER_URL}")
+        return None
+    u = urllib.parse.urlparse(MOCK_SERVER_URL)
+    if u.hostname not in ("127.0.0.1", "localhost"):
+        sys.exit(f"No server at {MOCK_SERVER_URL}.")
+    cmd = [sys.executable, str(BASE_DIR / "starter-kit" / "mock-apis" / "mock_server.py"), "--port", str(u.port or 8787)]
+    if not flaky:
+        cmd.append("--no-flake")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(50):
+        if _mock_is_up():
+            print(f"[mock] started the bundled mock ({'flaky: 429/503 on' if flaky else 'calm'}) at {MOCK_SERVER_URL}")
+            return proc
+        time.sleep(0.1)
+    proc.terminate()
+    sys.exit("Could not start the bundled mock server.")
 
 
 def _print_checkout(res) -> None:
@@ -117,7 +153,8 @@ def run_bench(service: PosService, args) -> None:
 def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Eluno POS CLI")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("demo", help="End-to-end demo against the mock APIs")
+    dm = sub.add_parser("demo", help="End-to-end demo; starts the bundled mock if none is running")
+    dm.add_argument("--flaky", action="store_true", help="start the mock with random 429/503 failures")
 
     lk = sub.add_parser("lookup", help="Customer + latest valid prescription")
     lk.add_argument("--phone", required=True)
@@ -169,11 +206,16 @@ def main(argv: Optional[List[str]] = None) -> None:
     sub.add_parser("sync-pending", help="Replay paid bills that are not yet in Shopify")
 
     args = parser.parse_args(argv)
-    service = PosService()
+    service = build_service()
 
     try:
         if args.command in (None, "demo"):
-            run_demo(service)
+            mock = _start_mock_if_needed(getattr(args, "flaky", False))
+            try:
+                run_demo(service)
+            finally:
+                if mock:
+                    mock.terminate()
         elif args.command == "lookup":
             cust, rx = service.lookup_customer_and_rx(args.phone)
             print(f"Customer: {cust.full_name if cust else 'NOT FOUND'}  flags: {cust.billing_flags if cust else ''}")

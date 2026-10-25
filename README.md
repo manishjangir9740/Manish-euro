@@ -7,13 +7,16 @@ Python 3.8+, standard library only. No `pip install`.
 ## Run it
 
 ```bash
-# terminal 1 - the mock Shopify Admin + store tool + payment terminal
+python run_pos.py demo          # ONE command: starts the bundled mock, runs the whole flow, stops the mock
+python run_pos.py demo --flaky  # same, with the mock injecting 429s and terminal 503s
+python run_pos.py test          # unit tests, no network needed
+```
+
+To drive the CLI/API commands below yourself, start the mock in another terminal first:
+
+```bash
 python starter-kit/mock-apis/mock_server.py            # flaky: ~10% 429s, 30% terminal 503s
 python starter-kit/mock-apis/mock_server.py --no-flake # calm
-
-# terminal 2
-python run_pos.py demo      # the whole Must flow, plus cash till and day-end
-python run_pos.py test      # 91 unit tests, no network needed
 ```
 
 The mock is in memory: restart it to reset Shopify. Local state (invoice series, till, audit log, pending-bill outbox) is in `state/`; delete `state/*.json` when you restart the mock, otherwise invoice numbers continue from the old run. (A fresh store always starts after the highest invoice already in Shopify, so seed numbers are never reused.) `ELUNO_MOCK_SERVER_URL` and `ELUNO_STATE_DIR` override the defaults.
@@ -57,11 +60,11 @@ python run_pos.py bench --n 12       # time 12 bills against the mock (creates o
 
 ## Optional HTTP API
 
-`python run_pos.py serve` starts `pos/server.py` on `127.0.0.1:8000` (the brief allows a CLI or an HTTP API; the CLI is the primary interface). Endpoints: `GET /health`, `GET /api/customer?phone=`, `POST /api/checkout`, `POST /api/refund`, `GET /api/day-end?store=&date=`. **It has no authentication**, so it binds to localhost only and must not be exposed on a store network as is. It does not expose manager discounts, partial refunds or the till; those are CLI-only for now. It has one test (`/health`); the checkout/refund endpoints are only exercised through the service layer tests.
+`python run_pos.py serve` starts `pos/server.py` on `127.0.0.1:8000` (the brief allows a CLI or an HTTP API; the CLI is the primary interface). Endpoints: `GET /health`, `GET /api/customer?phone=`, `POST /api/checkout`, `POST /api/refund`, `GET /api/day-end?store=&date=`. **It has no authentication**, so it binds to localhost only and must not be exposed on a store network as is. `/api/customer` returns the priority/campaign `flags`. It does not expose manager discounts, partial refunds or the till; those are CLI-only for now. It has one test (`/health`); the checkout/refund endpoints are only exercised through the service layer tests.
 
 ## Decisions worth knowing
 
-- **Shopify is behind an adapter.** `domain/` and `services/` import nothing from Shopify. The adapter turns Shopify JSON into domain types (`OrderRecord`, `Variant`, `Customer`…) and domain types into payloads. The *decisions* (what restocks, what the refund is, what the invoice number is) are made in the domain; the adapter only translates. Replacing Shopify in 2027 means writing one class with the same methods (`ShopifyAdapter` is the full list). Honest leak: the domain keeps `inventory_item_id` / `location_id` as opaque ids.
+- **Shopify is behind an adapter.** `domain/` and `services/` import no adapter and nothing from Shopify (enforced by `tests/test_architecture.py`); `pos/bootstrap.py` is the only place that picks concrete backends and hands them to `PosService`. The adapter turns Shopify JSON into domain types (`OrderRecord`, `Variant`, `Customer`…) and domain types into payloads. The *decisions* (what restocks, what the refund is, what the invoice number is) are made in the domain; the adapter only translates. Replacing Shopify in 2027 means writing one class with the same methods (`ShopifyAdapter` is the full list). Honest leak: the domain keeps `inventory_item_id` / `location_id` as opaque ids.
 - **Money is integer paise** everywhere (`Money` refuses floats; percentages use integer basis points with half-up rounding; flat cart discounts are split with largest-remainder so lines sum exactly). Decimal strings appear only in the adapters. Tax rates are basis points; the 0.09 Shopify wants is derived at the boundary.
 - **Tax and offers are data.** `tax_rates.json` (with effective dates) and `offers.json`. New rates or offers need no code change. An unknown HSN or overlapping rate dates is an error, never silently 0%.
 - **Offer semantics** (defined in `offers.py`): stackable offers combine, applied in `priority` order (lower first), each line capped at what is left on it. A non-stackable offer never combines. The engine compares "all eligible stackable offers together" against "each non-stackable offer alone" and picks the largest saving for the customer (ties → lower priority number). Every offer gets a row `{offer_id, applied, amount, why}` so staff and finance can see why. Discounts apply to the inclusive price *before* tax is backed out.
@@ -71,9 +74,9 @@ python run_pos.py bench --n 12       # time 12 bills against the mock (creates o
 - **Day-end source of truth is Shopify**, as Finance asked. The report also reads the local invoice register and till and prints a `MISMATCH:` line for: an invoice paid but not in Shopify, till cash sales / refunds that differ from Shopify cash orders, and a till variance over ₹200.
 - **Expired prescription**: the lookup returns only a currently valid Rx; if there is none, lens billing is blocked with "book an eye test". No override in v1 (a clinical decision for Dr. Iyer to make).
 
-## Tests (`python run_pos.py test`, 91)
+## Tests (`python run_pos.py test`, 96)
 
-Tax (paisa invariant, date-effective rates), money/rounding/allocation, offers (stacking, best combination, expiry, caps, manager rules), Rx validation (every block reason, grid warning), refunds (per-line tax, restock location, partial, double refund, mismatch guard, cash/till), resilience (429 Retry-After, 503 on idempotent vs non-idempotent calls, timeout-after-create does not duplicate, paid-but-offline bill syncs exactly once, declined payment leaves a cancelled number), invoice series, till variance, manager-discount audit rules, day-end totals and mismatch reporting. Also: four parallel processes issuing invoice numbers from one file get 60 unique, gapless numbers. Tests use temp state and mocks; they never touch `state/` or the network.
+Architecture (core imports no adapter / Shopify, no float money), tax (paisa invariant, date-effective rates), money/rounding/allocation, offers (stacking, best combination, expiry, caps, manager rules), Rx validation (every block reason, grid warning), refunds (per-line tax, restock location, partial, double refund, mismatch guard, cash/till), resilience (429 Retry-After, 503 on idempotent vs non-idempotent calls, timeout-after-create does not duplicate, paid-but-offline bill syncs exactly once, declined payment leaves a cancelled number), invoice series, till variance, manager-discount audit rules, day-end totals and mismatch reporting. Also: four parallel processes issuing invoice numbers from one file get 60 unique, gapless numbers. Tests use temp state and mocks; they never touch `state/` or the network.
 
 ## Where I stopped, and known gaps
 
@@ -82,6 +85,7 @@ Must is complete. Not built:
 - **Family billing** (one bill, three Rxs). The line model already carries `rx` per lens line, so the order shape works; the open question is whose customer record the order belongs to (Shopify has one customer per order) and how a partial refund of one family member is shown. Needs a decision from Retail + Finance. Today: bill each person in turn.
 - **Remake flow** (₹0 lens-only order with `parent_invoice_no`, no frame line, no stock touched). Not built; the seed's remake order (#1009) is the template. Who bears the lab cost needs a rule from Dr. Iyer / Finance first.
 - **Founder's 10 am email.** The day-end data exists as a function; scheduling + email is not built.
+- **The ₹200 till-variance alert is shown, not sent.** It is written on the till session and printed as a `MISMATCH:` line in the day-end report; nothing emails or messages Finance "the same night" yet.
 - **Cancel-after-sale** of an issued invoice (only payment-failed bills are cancelled).
 - **Anomaly flags / offer authoring / Rx assist** (Stretch): none.
 - **Several tills on one machine are safe; tills on different machines are not.** The invoice series and till files are guarded by a cross-process lock (`domain/filelock.py`, tested with 4 parallel processes issuing 60 numbers: unique and gapless). Two tills on *different* computers each have their own file, so they would issue the same numbers. Production needs one service (or a DB sequence) per store to allocate invoice numbers. This is the main thing to fix before a multi-till store goes live.
@@ -93,17 +97,24 @@ Must is complete. Not built:
 - **Speed vs the 10-second target** (`python run_pos.py bench --n 12`, measured from the checkout call, i.e. "the customer said yes", to the finished invoice): average 0.05s against the calm mock; against the flaky mock (random 429s and terminal 503s, real retry sleeps) average 0.8s, worst 3.1s. These numbers exclude real store Wi-Fi latency and the customer's UPI/card approval time on the physical terminal, which will dominate. Each bill is about 6 round trips; catalog and locations are cached. On Windows use `127.0.0.1`, not `localhost` (the default now): `localhost` added about 2 s to every request here because of an IPv6 fallback, which made a bill take 4 s instead of 0.05 s.
 - Tests do not run the mock; the demo and manual runs did, with flakiness on.
 
+## What's next (in order)
+
+1. Run against a Shopify dev store with a real token; fix whatever the mock hides.
+2. Central invoice-number service per store (removes the multi-computer gap above).
+3. Family billing and the remake flow, once Retail / Finance / Optometry give the rules.
+4. Send the till-variance alert and the 10 am founder email (day-end data already exists).
+5. Real staff login for manager discounts; authentication in front of the HTTP API.
+
 ## Layout
 
 ```
 STAKEHOLDER_REPLY.md   Part A
 run_pos.py             entry point (demo, test, and every CLI command)
-pos/domain/            money, models, tax, offers, rx_validator, refunds, invoice_series, till, audit  (no Shopify)
+pos/domain/            money, models, tax, offers, rx_validator, refunds, invoice_series, till, audit, filelock, errors  (no Shopify)
+pos/bootstrap.py       composition root: picks the real adapters
 pos/adapters/          shopify_adapter (only place Shopify shapes exist), smt_adapter, terminal_adapter, http_client
 pos/services/          pos_service (orchestration), invoice_formatter, outbox
 pos/server.py          optional localhost HTTP API
-tests/                 91 tests
+tests/                 96 tests
 starter-kit/           provided mock + seed data (unchanged)
 ```
-#   e u r o -  
- 

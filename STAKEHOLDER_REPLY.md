@@ -2,48 +2,47 @@
 
 **To:** Rohan, Priya · **Cc:** Meena, Dr. Iyer, Vikram, Farhan
 
-Thanks all. Here is what I will build for v1, what I won't, where your asks collide, and what I need from you. Shopify stays the system of record; the new app only replaces the screen at the till.
+Thanks all. Shopify stays the system of record; the new app replaces only the screen at the till. Below: my questions, what I'm building, where your asks collide, and what I need.
 
-## 1. Questions (who, and why it matters for v1)
+## 1. Questions (to whom, and why it matters for v1)
 
 | To | Question | Why it matters |
 |---|---|---|
-| Vikram | If the customer has paid on the terminal but the Shopify order can't be created (Wi-Fi), is a bill that is "paid, pending sync" acceptable for a few minutes, with a day-end flag until it syncs? | I will save the bill locally and replay it; I need your OK that the invoice number is valid before Shopify has the order. |
-| Vikram | Which invoice date/financial year rolls the series (`FY26`), and what happens to a number when payment fails: kept as "cancelled"? | Gapless series is non-negotiable; I assume failed-payment numbers stay as cancelled. |
-| Vikram | Is "Day-end matches Shopify to the rupee" measured on bills made that day, or including refunds made that day against older bills? | Changes how refunds are attributed in the report. |
-| Meena | You asked for Festive 10% + second pair 50% + priority ₹500 together. `offers.json` marks Festive as non-stackable (the others stack). Is that a data error or intended? | The app follows the data. If Retail really wants all three, the flag changes, not the code, but Finance should see the margin. |
-| Meena / Vikram | Manager discount: is "the manager's staff ID + a reason code, no second approver" enough for the auditors? | Satisfies "no approval chain" and "approver identity" together, but real PIN login is needed in production. |
-| Dr. Iyer | An external Rx with axis 87° (not on the 5° grid): block, or let the optometrist confirm? | I show a warning for the optometrist to confirm and do not block. Blocking loses the sale. |
-| Dr. Iyer | If there is no valid Rx (expired), can anyone override at the till? | v1 blocks lens billing with "book an eye test". |
-| Farhan / Dr. Iyer | Remake: who bears the lab cost, and is it a ₹0 lens-only order linked to the parent invoice? | Needs a written rule before I can build it. |
-| Rohan | What counts as "10 seconds": from the customer saying yes to the printed invoice, including card/UPI approval? | Terminal approval alone can take several seconds; I can control only our part. |
+| Vikram | If a customer has paid on the terminal but Shopify can't be reached, is a "paid, pending sync" bill acceptable for a few minutes, flagged at day-end until it syncs? | I save the bill locally and replay it; the invoice number is valid before Shopify has the order. I need your OK. |
+| Vikram | Does a number burned by a failed payment stay in the series as "cancelled"? When does `FY26` roll? | Gapless series is non-negotiable; I assume yes. |
+| Vikram | Should day-end count a refund on the day of the sale or the day of the refund? | Changes how refunds are attributed. |
+| Meena | You want Festive 10% + second pair 50% + priority ₹500 together. `offers.json` marks Festive non-stackable. Data error, or intended? | The app follows the data; if all three should stack, the flag changes, not the code. Finance should see the margin. |
+| Meena, Vikram | Is "manager's staff ID + reason code, no second approver" enough for auditors? | Meets "no approval chain" and "approver identity" together; production needs a real PIN/login. |
+| Dr. Iyer | External Rx with axis 87° (off the 5° grid): block or let the optometrist confirm? | I warn and let the optometrist confirm; blocking loses the sale. |
+| Dr. Iyer | With no valid Rx, can anyone override at the till? | v1 blocks the lens: "book an eye test". |
+| Farhan, Dr. Iyer | Remake: who bears the lab cost, and is it a ₹0 lens-only order linked to the parent invoice? | Needs a written rule before I build it. |
+| Rohan | Is the 10 seconds measured to the printed invoice, including UPI/card approval? | Terminal approval is outside our control. |
 
-## 2. What I'm building, and deferring
+## 2. Building vs deferring
 
-**Building for 15 Nov (all seven Must items, tested):** customer + Rx lookup with priority/campaign flags; lens-vs-Rx validation that blocks bad choices with an actionable reason; data-driven offers with best-for-customer selection; GST per line by HSN to the paisa; terminal charge then Shopify order with per-store invoice number, Rx on the lens line, tax lines and discounts; full and partial refund with tax reversed per line, frame restocked at the billing store, lens not restocked, credit note; day-end from Shopify orders. Also: cash till (float, paid-in/out with reasons, variance flagged over ₹200), sales channel on every order and a channel split, manager discount (≤10%, approver + reason code mandatory), audit log, and a "paid but not yet in Shopify" outbox that can't create duplicates.
+**Building for 15 Nov (tested):** customer + Rx lookup with priority/campaign flags; lens-vs-Rx validation that blocks with an actionable reason; data-driven offers choosing the best outcome for the customer; GST per line by HSN to the paisa; terminal charge, then Shopify order with per-store invoice number, Rx on the lens line, tax lines and discounts; full and partial refund (tax reversed per line, frame restocked at the billing store, lens scrapped, credit note); day-end from Shopify orders. Also cash till (float, paid-in/out with reasons, variance over ₹200 flagged), sales channel per order, manager discount (≤10%, approver + reason mandatory), audit log, and an outbox so a paid bill is never lost or duplicated.
 
 **Deferring, with reasons:**
-- **Family billing (3 people, 3 Rxs, 1 bill)**: a Shopify order has one customer; whose record, and how a single member's refund appears, is a Finance + Retail decision. v1: bill each person in turn. It's the next thing I'd build.
-- **Remake flow**: needs the cost-ownership rule above. The data shape (₹0 lens-only order with `parent_invoice_no`, no frame line, no stock touched) is already in the seed.
-- **10 am founder email**: the numbers exist; scheduling and mail are a small follow-up, not on the critical path for billing.
-- **Beverage question and the Indiranagar footfall camera**: not billing. Passing to the queue-tool owner / IT.
+- **Family billing:** a Shopify order has one customer; whose record, and how one member's refund appears, is a Finance + Retail decision. v1: bill each person in turn. Next to build.
+- **Remake flow:** needs the cost rule above; the data shape (₹0 lens-only order, `parent_invoice_no`, no frame line, no stock touched) is already in the seed.
+- **10 am founder email:** numbers exist; scheduling and mail are a small follow-up.
+- **Beverage question, Indiranagar footfall camera:** not billing; passing to the queue-tool owner / IT.
 
 ## 3. Contradictions and risks
 
-1. **"Everything stacks" vs. the offer data (Meena).** I do not hand-pick combinations. The till tries "all stackable offers together" against each non-stackable offer alone and applies whichever gives the customer the most, and shows why every other offer was skipped. That also fixes the "half the stores apply them manually" problem. Where the floor pitch is "Festive + second pair + priority", the data currently forbids it.
-2. **Manager discount with no approval vs. approver identity + reason (Meena vs. Vikram).** Both can hold: one tap for a reason code and the manager's ID, no approval chain. Both are stored on the Shopify order. Capped at 10%.
-3. **10 seconds vs. compliance checks (Rohan vs. Vikram).** The checks (Rx, tax, invoice number) are local and fast; the risk is the network and the terminal. I will measure end-to-end time on real store Wi-Fi before launch; I haven't yet.
-4. **Wi-Fi drops (Farhan).** The customer may have paid when Shopify can't be reached. Handling: the bill is saved locally first, and a retry first looks up the invoice number in Shopify, so it can't be created twice. A day-end line shows anything not yet synced.
-5. **Rx in the thread:** a −6.00 customer on a 1.56 lens is exactly what the validator blocks; the 1° axis confusion is handled by showing only the grid and warning on off-grid values.
-6. **Rates change (Vikram).** Rates are in a dated table; no code change and no re-issuing invoices for past dates.
-7. **Timeline risk:** seven stores by 15 Nov with no pilot is the biggest risk. I'd pilot one store first.
+1. **"Everything stacks" vs the offer data (Meena).** Staff don't pick combinations. The till compares all stackable offers together against each non-stackable offer alone, applies the best for the customer, and shows why each other offer was skipped. That also ends manual application. The floor pitch "Festive + second pair + priority" is currently forbidden by the data.
+2. **Manager discount with no approval vs approver identity (Meena vs Vikram).** One tap for a reason code plus the manager's ID, no chain; both stored on the Shopify order; capped at 10%.
+3. **10 seconds vs compliance checks (Rohan vs Vikram).** The checks are local and fast (about 0.05 s per bill locally; 3 s worst case with injected 429/503 failures). The real risk is store Wi-Fi and terminal approval, which I haven't measured.
+4. **Wi-Fi drops (Farhan).** The bill is saved locally first; a retry looks up the invoice number in Shopify before creating, so it can't be created twice. Anything unsynced shows on the day-end.
+5. **Timeline:** seven stores by 15 Nov with no pilot is the biggest risk. Pilot one store first.
+6. **Rates change (Vikram):** dated rate table, no code change, no re-issuing past invoices.
 
 ## 4. What I need to ship v1 for real
 
-- **Finance:** sign-off on invoice/credit-note number formats and the FY rollover; GSTIN per store on the invoice.
-- **Shopify admin:** an API token with orders/refunds/inventory scopes; a decision on an indexed invoice-number field (metafield) so duplicate checks don't scan orders.
-- **Store tool team:** the Rx API in production, an "external Rx confirmed by optometrist" flag, and staff login so a manager ID can't be typed by anyone.
-- **Payment terminal vendor:** confirmation that charge is idempotent on `order_ref` in production, and a refund API.
-- **Hardware / IT:** receipt printer and barcode scanner details; failover internet at Koramangala.
-- **Ops:** one pilot store and a 3-day dry run (8–11 Nov); a daily cash-count routine so the till variance is meaningful.
-- **Decisions:** the stacking, remake-cost and family-billing answers above.
+- **Finance:** sign-off on invoice and credit-note formats and the FY rollover; GSTIN per store.
+- **Shopify admin:** API token with orders/refunds/inventory scopes; an indexed invoice-number field so duplicate checks don't scan orders; a dev store to test against (I have only run against the mock).
+- **Store tool team:** production Rx API, an "external Rx confirmed" flag, staff login so a manager ID can't be typed by anyone.
+- **Terminal vendor:** confirmation that charge is idempotent on `order_ref`; a refund API.
+- **Engineering:** invoice numbers allocated by one central service per store. The current local files are safe for several tills on one computer, not on different computers.
+- **IT/Ops:** printer and scanner details; failover internet at Koramangala; one pilot store and a 3-day dry run (8–11 Nov); a daily cash-count routine.
+- **Decisions:** stacking, remake cost, family billing.

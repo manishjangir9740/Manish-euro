@@ -15,12 +15,12 @@ import json
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict, Optional
-from pos.services.pos_service import PosService
+from pos.bootstrap import build_service
 from pos.domain.rx_validator import RxValidationError
 
 
 class PosApiHandler(BaseHTTPRequestHandler):
-    service = PosService()
+    service = build_service()
 
     def _send_json(self, status_code: int, data: Dict[str, Any]) -> None:
         body = json.dumps(data, indent=2, default=str).encode("utf-8")
@@ -84,6 +84,7 @@ class PosApiHandler(BaseHTTPRequestHandler):
                     "phone": cust.phone,
                     "tags": cust.tags,
                     "is_priority": cust.is_priority,
+                    "flags": cust.billing_flags,
                     "total_spent": cust.total_spent.format_inr(),
                 },
                 "prescription": rx_data,
@@ -96,6 +97,8 @@ class PosApiHandler(BaseHTTPRequestHandler):
             try:
                 report = self.service.generate_day_end_report(store_code=store, date_str=date_str)
                 return self._send_json(200, report)
+            except ValueError as exc:  # unknown store / bad input
+                return self._send_json(404, {"error": str(exc)})
             except Exception as exc:
                 return self._send_json(500, {"error": str(exc)})
 

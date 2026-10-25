@@ -110,6 +110,21 @@ class TestNoDuplicateOrders(unittest.TestCase):
         self.assertEqual(client.post.call_count, 2)
 
 
+class TestUnknownOrder(unittest.TestCase):
+    def test_404_on_order_lookup_becomes_a_clear_value_error(self):
+        client = MagicMock()
+        client.get.side_effect = HttpStatusError("u", 404, {"errors": "Not Found"})
+        with self.assertRaises(ValueError) as ctx:
+            ShopifyAdapter(base_url="http://x", client=client).get_order(1)
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_other_http_errors_are_not_disguised(self):
+        client = MagicMock()
+        client.get.side_effect = HttpStatusError("u", 500, {})
+        with self.assertRaises(HttpStatusError):
+            ShopifyAdapter(base_url="http://x", client=client).get_order(1)
+
+
 class TestCheckoutResilience(unittest.TestCase):
     def setUp(self):
         self._d, self.tmp = tmpdir()
