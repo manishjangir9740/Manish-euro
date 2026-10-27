@@ -1,5 +1,8 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
-state/*.json
-!state/.gitkeep
-
+backend/state/*.json
+!backend/state/.gitkeep
+node_modules/
+.next/
+frontend/.env*.local
+*.log

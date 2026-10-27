@@ -1,18 +1,17 @@
-"""Web gateway for the till UI.
+"""Web gateway for the till UI (JSON API only; the Next.js app in ../frontend is the UI).
 
-A thin layer in front of PosService: it serves the static UI in `web/` and exposes the JSON the
+A thin layer in front of PosService: it exposes the JSON the
 screens need (catalog with per-lens Rx validation, price quote with offer breakdown, till, orders,
 partial refunds, audit). It holds NO business rules: every decision is made by PosService / the
 domain. Existing modules (pos/server.py, services, domain, adapters) are untouched.
 
 Money leaves this file as integer paise; the browser formats it.
-Optional HTTP Basic auth: set ELUNO_UI_PASSWORD (any user name) before exposing it beyond localhost.
+Optional shared secret: set ELUNO_API_TOKEN and every request must send it in `X-Api-Token`
+(the Next.js server adds it; the browser never sees it).
 """
 
-import base64
 import hmac
 import json
-import mimetypes
 import os
 import threading
 import urllib.parse
@@ -22,14 +21,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from pos.bootstrap import build_service
-from pos.config import BASE_DIR, TILL_VARIANCE_ALERT_PAISE
+from pos.config import TILL_VARIANCE_ALERT_PAISE
 from pos.domain.errors import AmbiguousWriteError
 from pos.domain.models import CHANNELS, PAYMENT_METHODS, Cart
 from pos.domain.money import Money
 from pos.domain.rx_validator import PrescriptionValidator, RxValidationError
 from pos.services.pos_service import MANAGER_MAX_BPS, REASON_CODES, REFUND_REASONS
 
-WEB_DIR = BASE_DIR / "web"
 _LOCK = threading.RLock()  # PosService and its JSON state files are used by one request at a time
 _SERVICE = None
 
@@ -443,17 +441,10 @@ class WebHandler(BaseHTTPRequestHandler):
         pass
 
     def _authorised(self) -> bool:
-        pw = os.environ.get("ELUNO_UI_PASSWORD")
-        if not pw or self.path == "/health":
+        token = os.environ.get("ELUNO_API_TOKEN")
+        if not token or self.path == "/health":
             return True
-        header = self.headers.get("Authorization", "")
-        if header.startswith("Basic "):
-            try:
-                _user, _, given = base64.b64decode(header[6:]).decode("utf-8").partition(":")
-                return hmac.compare_digest(given, pw)
-            except Exception:
-                return False
-        return False
+        return hmac.compare_digest(self.headers.get("X-Api-Token", ""), token)
 
     def _json(self, status: int, data: Any) -> None:
         body = json.dumps(data, default=str).encode("utf-8")
@@ -463,22 +454,6 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
-
-    def _static(self, path: str) -> None:
-        rel = "index.html" if path in ("/", "") else path.lstrip("/")
-        target = (WEB_DIR / rel).resolve()
-        if WEB_DIR.resolve() not in target.parents and target != WEB_DIR.resolve():
-            return self._json(404, {"error": "NotFound"})
-        if not target.is_file():
-            target = WEB_DIR / "index.html"  # single-page app fallback
-        data = target.read_bytes()
-        ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-        self.send_response(200)
-        self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith("text/") or "javascript" in ctype else ""))
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(data)
 
     def _dispatch(self, routes, query, body) -> None:
         path = urllib.parse.urlparse(self.path).path
@@ -495,24 +470,18 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if not self._authorised():
-            self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Basic realm="Eluno till"')
-            self.end_headers()
-            return
+            return self._json(401, {"error": "Unauthorised", "message": "Missing or wrong API token."})
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
             return self._json(200, {"status": "ok"})
         if parsed.path.startswith("/api/"):
             q = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
             return self._dispatch(GET_ROUTES, q, {})
-        self._static(parsed.path)
+        self._json(200, {"service": "Eluno till API", "docs": "see backend/pos/web.py"})
 
     def do_POST(self):
         if not self._authorised():
-            self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Basic realm="Eluno till"')
-            self.end_headers()
-            return
+            return self._json(401, {"error": "Unauthorised", "message": "Missing or wrong API token."})
         length = int(self.headers.get("Content-Length") or 0)
         try:
             body = json.loads(self.rfile.read(length) or b"{}")

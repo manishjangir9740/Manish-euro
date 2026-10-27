@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""One-command launcher for the till UI (also the hosting entry point).
+"""One-command launcher for the till API + bundled mock (also the hosting entry point).
 
-    python app.py                 # http://127.0.0.1:8080, starts the bundled mock if nothing is listening
+    python app.py                 # http://127.0.0.1:8000, starts the bundled mock if nothing is listening
     python app.py --flaky         # the mock injects 429s / terminal 503s (default for a real demo is calm)
 
 Hosting (Render etc.): binds 0.0.0.0:$PORT. The mock is in memory, so state lives in a fresh temp dir
 per start unless ELUNO_STATE_DIR is set; keeping them together avoids invoice numbers that continue
-from an old run. Set ELUNO_UI_PASSWORD to put the whole UI behind a password.
+from an old run. Set ELUNO_API_TOKEN to require an X-Api-Token header (the Next.js proxy sends it).
 """
 
 import argparse
@@ -25,7 +25,7 @@ sys.path.insert(0, str(BASE))
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8080)))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8000)))
     ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     ap.add_argument("--mock-port", type=int, default=8787)
     ap.add_argument("--flaky", action="store_true", default=os.environ.get("ELUNO_FLAKY") == "1")
