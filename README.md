@@ -1,3 +1,23 @@
+# Eluno POS: till UI (Round 2)
+
+```bash
+python app.py            # http://127.0.0.1:8080  (starts the bundled mock too; no pip install)
+python app.py --flaky    # mock injects 429s / terminal 503s
+```
+
+A sales person can run the whole Must flow from the browser or a tablet: **Sell** (phone lookup, Rx card, frame + lens picker where blocked lenses show *why*, live offers / GST breakup, manager discount, UPI / card / cash, printable invoice), **Refunds** (full or per-line, credit note), **Till** (open, paid-in/out, count and close, variance), **Day-end** (KPIs, payment and channel split, reconciliation), **Activity** (audit trail). Plain HTML/CSS/JS in `web/`, no build step.
+
+**Backend untouched.** No existing module was edited. `pos/web.py` is a new thin gateway in front of `PosService` (the old `pos/server.py` has no catalog, offer breakdown, till or partial refund). It adds no business rules: lens validation, offers, GST, invoice numbers and refund maths all still come from `domain/` and `services/`. Two small guards live in the gateway: cash payments require an open till, and the UI is serialised with one lock.
+
+**Hosting.** `render.yaml` deploys one free Render web service (`python app.py`, binds `$PORT`). State is a fresh temp dir per start, matching the in-memory mock. It runs on mock data only; set `ELUNO_UI_PASSWORD` to require a password. `app.py` ignores any `SHOPIFY_*` variables unless `ELUNO_USE_SHOPIFY=1`. Free instances sleep and reset, so open it once before a demo.
+
+## Where AI tools helped and where they misled (draft: edit to match your own experience)
+
+- **Helped:** reading the existing service layer and mapping it to screens quickly; writing the gateway and the plain-JS views; headless-browser runs to check the whole sale, refund and report flow.
+- **Misled / caught:** the first run showed 401 errors because my shell had `SHOPIFY_SHOP` set for the real dev store, so the UI silently tried the real Shopify; the launcher now forces the mock. A copy-pasted bracket slipped into one view and only a syntax check found it. AI-written UI still needs a real run against the mock for every flow.
+
+---
+
 # Eluno POS — v1 till app
 
 A till app that replaces Shopify POS in Eluno stores. Shopify stays the system of record: every order, payment transaction, refund and restock lands in Shopify through the Admin API. Prescriptions come from the store tool; cash till, invoice series, offers and day-end are owned here.

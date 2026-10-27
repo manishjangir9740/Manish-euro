@@ -1,0 +1,14 @@
+# Render blueprint: one free web service runs the till UI + the bundled mock (everything in one process tree).
+services:
+  - type: web
+    name: eluno-till
+    runtime: python
+    plan: free
+    buildCommand: "echo no build step, standard library only"
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: ELUNO_UI_PASSWORD   # optional: set in the dashboard to put the demo behind a password
+        sync: false
