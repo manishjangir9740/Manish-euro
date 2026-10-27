@@ -1,20 +1,50 @@
-# Eluno POS: till UI (Round 2)
+# Eluno POS: till app (backend + Next.js frontend)
 
-```bash
-python app.py            # http://127.0.0.1:8080  (starts the bundled mock too; no pip install)
-python app.py --flaky    # mock injects 429s / terminal 503s
+```
+backend/    Python 3.8+, standard library only: domain, services, Shopify/store-tool/terminal adapters,
+            CLI, the till API (pos/web.py), the bundled mock of Shopify, and all tests
+frontend/   Next.js 16 (App Router, TypeScript): the till screens, Instrument Sans, #f88e2b / white / black
+brief/      the exercise brief and stakeholder thread
 ```
 
-A sales person can run the whole Must flow from the browser or a tablet: **Sell** (phone lookup, Rx card, frame + lens picker where blocked lenses show *why*, live offers / GST breakup, manager discount, UPI / card / cash, printable invoice), **Refunds** (full or per-line, credit note), **Till** (open, paid-in/out, count and close, variance), **Day-end** (KPIs, payment and channel split, reconciliation), **Activity** (audit trail). Plain HTML/CSS/JS in `web/`, no build step.
+## Run it (two terminals)
 
-**Backend untouched.** No existing module was edited. `pos/web.py` is a new thin gateway in front of `PosService` (the old `pos/server.py` has no catalog, offer breakdown, till or partial refund). It adds no business rules: lens validation, offers, GST, invoice numbers and refund maths all still come from `domain/` and `services/`. Two small guards live in the gateway: cash payments require an open till, and the UI is serialised with one lock.
+```bash
+# 1. backend: API on :8000 plus the bundled mock (nothing to install)
+cd backend && python app.py            # add --flaky to make the mock return 429s / terminal 503s
 
-**Hosting.** `render.yaml` deploys one free Render web service (`python app.py`, binds `$PORT`). State is a fresh temp dir per start, matching the in-memory mock. It runs on mock data only; set `ELUNO_UI_PASSWORD` to require a password. `app.py` ignores any `SHOPIFY_*` variables unless `ELUNO_USE_SHOPIFY=1`. Free instances sleep and reset, so open it once before a demo.
+# 2. frontend: UI on :3000
+cd frontend && npm install && npm run dev
+```
+
+Open http://localhost:3000. Production: `cd frontend && npm run build && npm start` (needs `BACKEND_URL`, see [frontend/README.md](frontend/README.md)).
+
+The CLI from Round 1 is unchanged: every `python run_pos.py ...` command below is run from `backend/`.
+
+## The UI
+
+A sales person can run the whole Must flow from a browser or tablet: **Sell** (phone lookup, Rx card, frame + lens picker where blocked lenses show *why*, live offers and GST breakup, manager discount, UPI / card / cash, printable invoice), **Refunds** (full or per-line, credit note), **Till** (open, paid-in/out, count and close, variance), **Day-end** (KPIs, payment and channel split, reconciliation), **Activity** (audit trail).
+
+**Backend rules were not touched.** Round 1 code moved into `backend/` as is (git shows renames). `backend/pos/web.py` is a new thin JSON gateway in front of `PosService`, because the Round 1 HTTP API has no catalog, offer breakdown, till or partial refund. It adds no business rules: lens validation, offers, GST, invoice numbers and refund maths still live in `domain/` and `services/`. Two small guards sit in the gateway: cash payments need an open till, and requests are handled one at a time. The browser never calls Python directly: Next.js proxies `/api/*` server-side and adds the optional `ELUNO_API_TOKEN`.
+
+## Tests
+
+```bash
+cd backend  && python run_pos.py test      # 128 tests: 101 unit + 27 acceptance
+cd frontend && npm run lint && npm run typecheck && npm run build
+cd frontend && npm run e2e                 # 12 browser checks against a running stack (needs Edge/Chrome, CHROME_PATH)
+```
+
+`backend/tests/test_acceptance.py` boots the real mock and API and checks the brief requirement by requirement, reading Shopify's side back from the mock: lookup and valid Rx; lens blocked with an actionable reason; offers (stacking, expired, manager rules); GST that adds to the paisa; order with tax lines, discount allocations, sale transaction, Rx on the lens line and a per-store invoice number that is not Shopify's; full and partial refund (tax reversed, frame restocked at the billing store, lens not, refund transaction against the sale, credit note); day-end totals equal to Shopify's orders; cash till, variance alert, channel split, audit trail; and a flaky-mock run that must create exactly one order and one sale per bill. `frontend/e2e/smoke.mjs` repeats the flow through real clicks.
+
+## Hosting
+
+`render.yaml` defines two free Render services (API and UI). Set `BACKEND_URL` on the UI service to the API's URL; the shared token is wired automatically. Mock state is in memory, so it resets when a free instance sleeps. Not deployed from this repo yet, and the blueprint is untested until it is. `ELUNO_UI_PASSWORD` puts the whole UI behind a password.
 
 ## Where AI tools helped and where they misled (draft: edit to match your own experience)
 
-- **Helped:** reading the existing service layer and mapping it to screens quickly; writing the gateway and the plain-JS views; headless-browser runs to check the whole sale, refund and report flow.
-- **Misled / caught:** the first run showed 401 errors because my shell had `SHOPIFY_SHOP` set for the real dev store, so the UI silently tried the real Shopify; the launcher now forces the mock. A copy-pasted bracket slipped into one view and only a syntax check found it. AI-written UI still needs a real run against the mock for every flow.
+- **Helped:** mapping the existing service layer to screens; writing the gateway and the React views; a browser test runner that clicks through the real flow.
+- **Misled / caught:** my first run silently used the real Shopify dev store because `SHOPIFY_SHOP` was set in the shell, so the launcher now forces the mock. A slip in a copy-pasted bracket and wrong test data (a customer with no valid Rx) were only found by running things. The UI showed `ORDER COMPLETED` in capitals until an end-to-end check read the page text. Generated tests needed a real run against the mock to be trusted.
 
 ---
 
@@ -111,7 +141,7 @@ What it will probably show on a real store, because the mock puts Eluno data in 
 - **Day-end source of truth is Shopify**, as Finance asked. The report also reads the local invoice register and till and prints a `MISMATCH:` line for: an invoice paid but not in Shopify, till cash sales / refunds that differ from Shopify cash orders, and a till variance over ₹200.
 - **Expired prescription**: the lookup returns only a currently valid Rx; if there is none, lens billing is blocked with "book an eye test". No override in v1 (a clinical decision for Dr. Iyer to make).
 
-## Tests (`python run_pos.py test`, 101)
+## Unit tests (101)
 
 Architecture (core imports no adapter / Shopify, no float money), tax (paisa invariant, date-effective rates), money/rounding/allocation, offers (stacking, best combination, expiry, caps, manager rules), Rx validation (every block reason, grid warning), refunds (per-line tax, restock location, partial, double refund, mismatch guard, cash/till), resilience (429 Retry-After, 503 on idempotent vs non-idempotent calls, timeout-after-create does not duplicate, paid-but-offline bill syncs exactly once, declined payment leaves a cancelled number), invoice series, till variance, manager-discount audit rules, day-end totals and mismatch reporting. Also: four parallel processes issuing invoice numbers from one file get 60 unique, gapless numbers. Tests use temp state and mocks; they never touch `state/` or the network.
 
@@ -142,7 +172,7 @@ Must is complete. Not built:
 4. Send the till-variance alert and the 10 am founder email (day-end data already exists).
 5. Real staff login for manager discounts; authentication in front of the HTTP API.
 
-## Layout
+## Layout (everything is inside backend/ except STAKEHOLDER_REPLY.md)
 
 ```
 STAKEHOLDER_REPLY.md   Part A

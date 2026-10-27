@@ -1,14 +1,34 @@
-# Render blueprint: one free web service runs the till UI + the bundled mock (everything in one process tree).
+# Render blueprint: two free web services. The API runs the bundled mock beside it (in memory, resets on restart).
 services:
   - type: web
-    name: eluno-till
+    name: eluno-till-api
     runtime: python
     plan: free
+    rootDir: backend
     buildCommand: "echo no build step, standard library only"
     startCommand: python app.py
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.3
-      - key: ELUNO_UI_PASSWORD   # optional: set in the dashboard to put the demo behind a password
+      - key: ELUNO_API_TOKEN      # shared secret: only the frontend server knows it
+        generateValue: true
+
+  - type: web
+    name: eluno-till
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: BACKEND_URL          # set to the API service URL, e.g. https://eluno-till-api.onrender.com
+        sync: false
+      - key: ELUNO_API_TOKEN
+        fromService:
+          type: web
+          name: eluno-till-api
+          envVarKey: ELUNO_API_TOKEN
+      - key: ELUNO_UI_PASSWORD    # optional: password for the whole app
         sync: false
